@@ -17,7 +17,6 @@ import (
 	"strings"
 	sync "sync/atomic"
 	"text/template"
-	"time"
 
 	ctconfig "github.com/hashicorp/consul-template/config"
 	"github.com/hashicorp/consul-template/manager"
@@ -236,16 +235,14 @@ func (ts *Server) Run(ctx context.Context, incoming chan string, templates []*ct
 				return fmt.Errorf("template server: %w", err)
 			}
 
-			// Calculate the amount of time to backoff using exponential backoff
-			sleep, err := restartBackoff.Next()
-			if err != nil {
-				ts.logger.Error("template server: reached maximum number of restart attempts")
-				restartBackoff.Reset()
-			}
-
-			// Sleep for the calculated backoff time then attempt to create a new runner
-			ts.logger.Warn(fmt.Sprintf("template server restart: retry attempt after %s", sleep))
-			time.Sleep(sleep)
+			// Restart the runner immediately without backoff delay.
+			// The consul-template runner's Run() method already handles exec {}
+			// command failures gracefully — it logs and continues without
+			// returning an error. Template-level errors (fatal template
+			// execution failures) still cause the runner to exit, but we
+			// restart promptly so the other templates continue rendering.
+			ts.logger.Warn("template server: restarting runner immediately")
+			restartBackoff.Reset()
 
 			ts.runner, err = manager.NewRunner(runnerConfig, false)
 			if err != nil {
