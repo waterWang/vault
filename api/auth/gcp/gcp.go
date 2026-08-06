@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"net/http"
 	"net/url"
 	"time"
@@ -79,7 +80,7 @@ func (a *GCPAuth) Login(ctx context.Context, client *api.Client) (*api.Secret, e
 	}
 	switch a.authType {
 	case gceType:
-		jwt, err := a.getJWTFromMetadataService(client.Address())
+		jwt, err := a.getJWTFromMetadataService(ctx, client.Address())
 		if err != nil {
 			return nil, fmt.Errorf("unable to retrieve JWT from GCE metadata service: %w", err)
 		}
@@ -157,14 +158,14 @@ func (a *GCPAuth) signJWT() (*credentialspb.SignJwtResponse, error) {
 	return jwtResp, nil
 }
 
-func (a *GCPAuth) getJWTFromMetadataService(vaultAddress string) (string, error) {
+func (a *GCPAuth) getJWTFromMetadataService(ctx context.Context, vaultAddress string) (string, error) {
 	if !metadata.OnGCE() {
 		return "", fmt.Errorf("GCE metadata service not available")
 	}
 
 	// build request to metadata server
 	c := &http.Client{}
-	req, err := http.NewRequest(http.MethodGet, identityMetadataURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityMetadataURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("error creating http request: %w", err)
 	}
@@ -182,10 +183,17 @@ func (a *GCPAuth) getJWTFromMetadataService(vaultAddress string) (string, error)
 
 	// get jwt from response
 	body, err := io.ReadAll(resp.Body)
-	jwt := string(body)
 	if err != nil {
 		return "", fmt.Errorf("error reading response from metadata service: %w", err)
 	}
 
-	return jwt, nil
+	// check for non-2xx response — the metadata endpoint may return an error
+	// body instead of a signed JWT, which must be surfaced to the caller
+	// rather than forwarded to Vault as a malformed JWT.
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("metadata service returned %s requesting an identity token: %s",
+			resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	return string(body), nil
 }
