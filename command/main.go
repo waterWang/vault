@@ -46,7 +46,9 @@ func setupEnv(args []string) (retArgs []string, format string, detailed bool, ou
 	var nextArgFormat bool
 	var haveDetailed bool
 
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
 		if nextArgFormat {
 			nextArgFormat = false
 			format = arg
@@ -54,11 +56,13 @@ func setupEnv(args []string) (retArgs []string, format string, detailed bool, ou
 		}
 
 		if arg == "--" {
+			// Arguments after "--" are treated literally and passed through
+			retArgs = append(retArgs, args[i:]...)
 			break
 		}
 
 		if len(args) == 1 && (arg == "-v" || arg == "-version" || arg == "--version") {
-			args = []string{"version"}
+			retArgs = []string{"version"}
 			break
 		}
 
@@ -75,26 +79,32 @@ func setupEnv(args []string) (retArgs []string, format string, detailed bool, ou
 		// Parse a given flag here, which overrides the env var
 		if isGlobalFlagWithValue(arg, globalFlagFormat) {
 			format = getGlobalFlagValue(arg)
+			continue
 		}
 		// For backwards compat, it could be specified without an equal sign
 		if isGlobalFlag(arg, globalFlagFormat) {
 			nextArgFormat = true
+			continue
 		}
 
 		// Parse a given flag here, which overrides the env var
 		if isGlobalFlagWithValue(arg, globalFlagDetailed) {
-			detailed, err = strconv.ParseBool(getGlobalFlagValue(globalFlagDetailed))
+			detailed, err = strconv.ParseBool(getGlobalFlagValue(arg))
 			if err != nil {
 				detailed = false
 			}
 			haveDetailed = true
+			continue
 		}
 		// For backwards compat, it could be specified without an equal sign to enable
 		// detailed output.
 		if isGlobalFlag(arg, globalFlagDetailed) {
 			detailed = true
 			haveDetailed = true
+			continue
 		}
+
+		retArgs = append(retArgs, arg)
 	}
 
 	envVaultFormat := os.Getenv(EnvVaultFormat)
@@ -117,7 +127,21 @@ func setupEnv(args []string) (retArgs []string, format string, detailed bool, ou
 		}
 	}
 
-	return args, format, detailed, outputCurlString, outputPolicy
+	// Make the parsed values visible to the command flag sets, which read
+	// their defaults from these env vars. This matters when a global flag
+	// appears after a positional argument (e.g.
+	// `vault read secret/my-secret -format=json`): the command's flag parser
+	// stops at the first positional argument, so without this the flag would
+	// otherwise be treated as a key=value data field and forwarded to the
+	// API as a query parameter.
+	if format != "" {
+		os.Setenv(EnvVaultFormat, format)
+	}
+	if haveDetailed {
+		os.Setenv(EnvVaultDetailed, strconv.FormatBool(detailed))
+	}
+
+	return retArgs, format, detailed, outputCurlString, outputPolicy
 }
 
 func isGlobalFlag(arg string, flag string) bool {
