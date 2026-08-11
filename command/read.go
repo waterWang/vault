@@ -101,7 +101,20 @@ func (c *ReadCommand) Run(args []string) int {
 
 	path := sanitizePath(args[0])
 
-	data, err := parseArgsDataStringLists(stdin, args[1:])
+	// Filter out CLI flags that appear after the path (Go flag parser stops
+	// at the first non-flag argument, so -format=json after the path would
+	// otherwise be interpreted as a data key-value pair and sent as a query
+	// parameter, warning audit logs with "Endpoint ignored these unrecognized
+	// parameters: [-format]"). See https://github.com/hashicorp/vault/issues/32081
+	var cleanArgs []string
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "-") && a != "-" {
+			// Skip CLI flags that leaked into positional args
+			continue
+		}
+		cleanArgs = append(cleanArgs, a)
+	}
+	data, err := parseArgsDataStringLists(stdin, cleanArgs)
 	if err != nil {
 		c.UI.Error(fmt.Sprintf("Failed to parse K=V data: %s", err))
 		return 1
