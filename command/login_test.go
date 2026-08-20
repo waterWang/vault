@@ -48,7 +48,7 @@ func testLoginCommand(tb testing.TB) (*cli.MockUi, *LoginCommand) {
 
 // failingStoreTokenHelper is a token helper that always fails to store
 type failingStoreTokenHelper struct {
-	token.TokenHelper
+	*token.TestingTokenHelper
 }
 
 func (f *failingStoreTokenHelper) Store(token string) error {
