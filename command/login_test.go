@@ -45,6 +45,16 @@ func testLoginCommand(tb testing.TB) (*cli.MockUi, *LoginCommand) {
 	}
 }
 
+// failingStoreTokenHelper is a token helper that always fails to store
+type failingStoreTokenHelper struct {
+	token.TokenHelper
+}
+
+func (f *failingStoreTokenHelper) Store(token string) error {
+	return fmt.Errorf("simulated store failure")
+}
+
+
 func TestCustomPath(t *testing.T) {
 	t.Parallel()
 
@@ -258,6 +268,51 @@ func TestFailureNoStore(t *testing.T) {
 		t.Errorf("expected %q to contain %q", combined, expected)
 	}
 
+	if storedToken, err := tokenHelper.Get(); err != nil || storedToken != "" {
+		t.Fatalf("expected token to not be stored: %s: %q", err, storedToken)
+	}
+}
+
+func TestFailureNoStoreNoPrint(t *testing.T) {
+	t.Parallel()
+
+	client, closer := testVaultServer(t)
+	defer closer()
+
+	secret, err := client.Auth().Token().Create(&api.TokenCreateRequest{
+		Policies: []string{"default"},
+		TTL:      "30m",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := secret.Auth.ClientToken
+
+	ui, cmd := testLoginCommand(t)
+	cmd.client = client
+	cmd.SetTokenHelper(&failingStoreTokenHelper{token.NewTestingTokenHelper()})
+
+	code := cmd.Run([]string{
+		"-no-print",
+		token,
+	})
+	if exp := 2; code != exp {
+		t.Errorf("expected %d to be %d", code, exp)
+	}
+
+	// Verify the token was NOT printed
+	combined := ui.OutputWriter.String() + ui.ErrorWriter.String()
+	if strings.Contains(combined, token) {
+		t.Errorf("token should not be printed with -no-print: %q", combined)
+	}
+
+	// Verify the error message was shown
+	expected := "Error storing token"
+	if !strings.Contains(combined, expected) {
+		t.Errorf("expected %q to contain %q", combined, expected)
+	}
+
+	// Verify token was not stored
 	if storedToken, err := tokenHelper.Get(); err != nil || storedToken != "" {
 		t.Fatalf("expected token to not be stored: %s: %q", err, storedToken)
 	}
