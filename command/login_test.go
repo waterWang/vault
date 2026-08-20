@@ -293,6 +293,11 @@ func TestFailureNoStoreNoPrint(t *testing.T) {
 	cmd.client = client
 	cmd.SetTokenHelper(&failingStoreTokenHelper{token.NewTestingTokenHelper()})
 
+	tokenHelper, err := cmd.TokenHelper()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	code := cmd.Run([]string{
 		"-no-print",
 		token,
