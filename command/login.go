@@ -308,10 +308,17 @@ func (c *LoginCommand) Run(args []string) int {
 		// Store the token in the local client
 		if err := tokenHelper.Store(token); err != nil {
 			c.UI.Error(fmt.Sprintf("Error storing token: %s", err))
-			c.UI.Error(wrapAtLength(
-				"Authentication was successful, but the token was not persisted. The "+
-					"resulting token is shown below for your records.") + "\n")
-			OutputSecret(c.UI, secret)
+			if c.flagNoPrint {
+				c.UI.Warn(wrapAtLength(
+					"Authentication was successful, but the token was not persisted. "+
+						"Set the VAULT_TOKEN environment variable or pass the token "+
+						"with each request to Vault.") + "\n")
+			} else {
+				c.UI.Error(wrapAtLength(
+					"Authentication was successful, but the token was not persisted. The "+
+						"resulting token is shown below for your records.") + "\n")
+				OutputSecret(c.UI, secret)
+			}
 			return 2
 		}
 
